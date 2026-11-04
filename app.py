@@ -17,13 +17,14 @@ import json
 from typing import Any
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from automata.nfa import NFA, EPSILON
 from automata.conversion import nfa_to_dfa, ConversionResult
 from automata.simulation import simulate_nfa, simulate_dfa
 from automata.validation import validate_automaton
 from examples.sample_nfas import EXAMPLES, get_example
-from visualization.graph import render_nfa, render_dfa
+from visualization.graph import render_nfa_interactive, render_dfa_interactive
 
 # ────────────────────────────────────────────────────────────────────────────
 # Page config & Global CSS
@@ -31,7 +32,7 @@ from visualization.graph import render_nfa, render_dfa
 
 st.set_page_config(
     page_title="NFA → DFA Simulator",
-    page_icon="⚙️",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -40,34 +41,46 @@ st.markdown(
     """
 <style>
 /* ── Google Font ── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 /* ── Root variables ── */
 :root {
-    --bg-primary:   #0f172a;
-    --bg-card:      #1e293b;
-    --bg-card2:     #162032;
-    --accent-blue:  #38bdf8;
-    --accent-cyan:  #22d3ee;
-    --accent-green: #4ade80;
-    --accent-amber: #fbbf24;
-    --accent-rose:  #fb7185;
-    --accent-violet:#a78bfa;
-    --text-primary: #e2e8f0;
-    --text-muted:   #94a3b8;
-    --border:       #334155;
+    --background-color: #1e1e1e;
+    --secondary-background-color: #292929;
+    --primary-color: #e34b4b;
+    --text-color: #eeeeee;
+    --bg-primary:   #1b1d1f;
+    --bg-card:      #25282a;
+    --bg-card2:     #212426;
+    --accent-blue:  #e34b4b;
+    --accent-cyan:  #e0b15a;
+    --accent-green: #78b887;
+    --accent-amber: #e0b15a;
+    --accent-rose:  #ef6666;
+    --accent-violet:#d28a8a;
+    --text-primary: #eeeeee;
+    --text-muted:   #aaaaaa;
+    --border:       #41474b;
 }
 
 /* ── Global ── */
 html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
     background-color: var(--bg-primary) !important;
     color: var(--text-primary) !important;
 }
 
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"] {
+    background-color: #1b1d1f !important;
+    color: #eeeeee !important;
+}
+
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0f172a 0%, #1a2744 100%) !important;
+    background: #222527 !important;
     border-right: 1px solid var(--border) !important;
 }
 
@@ -81,29 +94,29 @@ html, body, [class*="css"] {
 
 /* ── Section header cards ── */
 .section-header {
-    background: linear-gradient(135deg, #1e3a5f 0%, #1e293b 60%);
+    background: #25282a;
     border: 1px solid var(--accent-blue);
-    border-radius: 12px;
-    padding: 20px 28px;
-    margin-bottom: 28px;
+    border-radius: 4px;
+    padding: 18px 24px;
+    margin-bottom: 22px;
 }
-.section-header h1 { margin: 0 0 6px 0; font-size: 1.9rem; color: var(--accent-blue); }
+.section-header h1 { margin: 0 0 6px 0; font-size: 1.65rem; color: var(--accent-blue); }
 .section-header p  { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
 
 /* ── Info card ── */
 .info-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 3px;
     padding: 16px 20px;
     margin-bottom: 16px;
 }
 
 /* ── Step card ── */
 .step-card {
-    background: linear-gradient(135deg, #1a2744, #1e293b);
+    background: #292929;
     border-left: 4px solid var(--accent-cyan);
-    border-radius: 8px;
+    border-radius: 2px;
     padding: 14px 18px;
     margin-bottom: 14px;
     font-size: 0.92rem;
@@ -137,7 +150,7 @@ html, body, [class*="css"] {
     flex: 1; min-width: 120px;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 3px;
     padding: 14px;
     text-align: center;
 }
@@ -145,38 +158,38 @@ html, body, [class*="css"] {
 .metric-tile .lbl { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
 
 /* ── Monospace spans ── */
-.mono { font-family: 'JetBrains Mono', monospace; }
+.mono { font-family: 'IBM Plex Mono', monospace; }
 
 /* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {
     background: var(--bg-card) !important;
-    border-radius: 10px;
+    border-radius: 3px;
     gap: 4px;
     padding: 4px;
 }
 .stTabs [data-baseweb="tab"] {
     color: var(--text-muted) !important;
-    border-radius: 8px;
+    border-radius: 2px;
     padding: 6px 16px;
 }
 .stTabs [aria-selected="true"] {
-    background: #1e3a5f !important;
+    background: #3a2525 !important;
     color: var(--accent-blue) !important;
 }
 
 /* ── Buttons ── */
 .stButton > button {
-    background: linear-gradient(135deg, #0369a1, #0e7490) !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 8px !important;
+    background: #303538 !important;
+    color: #f1f3f4 !important;
+    border: 1px solid #515a5f !important;
+    border-radius: 4px !important;
     font-weight: 600 !important;
     transition: all 0.2s ease !important;
 }
 .stButton > button:hover {
-    background: linear-gradient(135deg, #0284c7, #06b6d4) !important;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(56,189,248,0.3) !important;
+    background: #3a2929 !important;
+    border-color: #e34b4b !important;
+    box-shadow: 0 2px 8px rgba(227,75,75,0.16) !important;
 }
 
 /* ── Input fields ── */
@@ -186,7 +199,7 @@ html, body, [class*="css"] {
     background: var(--bg-card) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
+    border-radius: 3px !important;
 }
 
 /* ── Dataframe ── */
@@ -204,6 +217,22 @@ html, body, [class*="css"] {
 
 /* ── Divider ── */
 hr { border-color: var(--border) !important; }
+
+[data-testid="stAlert"] {
+    background: #25292b !important;
+    border: 1px solid #41474b !important;
+    border-left: 4px solid #e34b4b !important;
+    color: #eeeeee !important;
+}
+
+/* Re-map legacy label colors into the charcoal, red, and amber palette. */
+[style*="38bdf8"] {
+    color: #e34b4b !important;
+}
+[style*="22d3ee"] { color: #e0b15a !important; }
+[style*="a78bfa"] { color: #86b5a2 !important; }
+[style*="1e3a5f"] { background-color: #3a2525 !important; }
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -218,7 +247,7 @@ def _init_session() -> None:
     defaults: dict[str, Any] = {
         "nfa": None,
         "conversion_result": None,
-        "page": "🏠 Home",
+        "page": "🔧 NFA Workspace",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -253,12 +282,9 @@ def _get_conversion() -> ConversionResult | None:
 # ────────────────────────────────────────────────────────────────────────────
 
 PAGES = [
-    "🏠 Home",
-    "🔧 NFA Builder",
-    "📊 NFA Visualization",
+    "🔧 NFA Workspace",
     "🔄 Conversion Process",
-    "📋 DFA Transition Table",
-    "📊 DFA Visualization",
+    "📐 DFA Workspace",
     "🧪 String Testing",
 ]
 
@@ -267,8 +293,8 @@ with st.sidebar:
         """
         <div style="text-align:center; padding: 16px 0 24px 0;">
           <div style="font-size:2.4rem;">⚙️</div>
-          <div style="font-size:1.2rem; font-weight:700; color:#38bdf8;">NFA → DFA</div>
-          <div style="font-size:0.78rem; color:#64748b; margin-top:2px;">Subset Construction Simulator</div>
+          <div style="font-size:1.2rem; font-weight:700; color:#e34b4b;">NFA → DFA</div>
+          <div style="font-size:0.78rem; color:#999999; margin-top:2px;">Subset Construction Simulator</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -286,8 +312,8 @@ with st.sidebar:
 
     st.markdown(
         f"""
-        <div style="background:#1e293b; border-radius:8px; padding:10px 14px;
-                    border:1px solid #334155; text-align:center;">
+        <div style="background:#292929; border-radius:3px; padding:10px 14px;
+                border:1px solid #484848; text-align:center;">
           <span style="font-size:1.2rem;">{status_icon}</span>
           <span style="color:{status_color}; font-weight:600; margin-left:6px;">{status_text}</span>
         </div>
@@ -314,18 +340,53 @@ with st.sidebar:
 # Helper: render graphviz safely
 # ────────────────────────────────────────────────────────────────────────────
 
-def _show_graph(dot, caption: str = "") -> None:
-    try:
-        svg = dot.pipe(format="svg").decode("utf-8")
-        st.markdown(
-            f'<div style="background:#0f172a; border:1px solid #334155; '
-            f'border-radius:12px; padding:20px; overflow-x:auto;">{svg}</div>',
-            unsafe_allow_html=True,
+def _graph_controls(key: str) -> dict[str, Any]:
+    st.markdown("##### Canvas Controls")
+    layout_col, physics_col, labels_col, spacing_col = st.columns([1.2, 1, 1, 1.3])
+    with layout_col:
+        layout = st.selectbox(
+            "Layout",
+            ["Physics", "Hierarchical"],
+            key=f"{key}_layout",
+            help="Choose a force-directed canvas or a left-to-right transition layout.",
         )
-        if caption:
-            st.caption(caption)
-    except Exception as e:
-        st.error(f"Graph rendering failed: {e}. Make sure Graphviz is installed.")
+    with physics_col:
+        physics = st.checkbox(
+            "Live physics",
+            value=True,
+            key=f"{key}_physics",
+            disabled=layout == "Hierarchical",
+            help="Let nodes settle naturally; you can still drag nodes when disabled.",
+        )
+    with labels_col:
+        show_labels = st.checkbox(
+            "Edge labels",
+            value=True,
+            key=f"{key}_labels",
+            help="Show symbols on transitions.",
+        )
+    with spacing_col:
+        node_spacing = st.slider(
+            "Node spacing",
+            min_value=100,
+            max_value=320,
+            value=190,
+            step=10,
+            key=f"{key}_spacing",
+        )
+    st.caption("Drag states to arrange the canvas · scroll to zoom · hover over a transition for details")
+    return {
+        "layout": layout,
+        "physics": physics,
+        "show_edge_labels": show_labels,
+        "node_spacing": node_spacing,
+    }
+
+
+def _show_graph(graph_html: str, caption: str = "") -> None:
+    components.html(graph_html, height=650, scrolling=False)
+    if caption:
+        st.caption(caption)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -445,7 +506,7 @@ def page_home() -> None:
 def page_nfa_builder() -> None:
     st.markdown(
         """<div class="section-header">
-          <h1>🔧 NFA Builder</h1>
+          <h1>🔧 NFA Workspace</h1>
           <p>Define your NFA manually or load a prebuilt example</p>
         </div>""",
         unsafe_allow_html=True,
@@ -691,7 +752,7 @@ def _show_transition_table_nfa(nfa: NFA) -> None:
 def page_nfa_viz() -> None:
     st.markdown(
         """<div class="section-header">
-          <h1>📊 NFA Visualization</h1>
+          <h1>📊 NFA Graph</h1>
           <p>Visual representation of your Non-Deterministic Finite Automaton</p>
         </div>""",
         unsafe_allow_html=True,
@@ -699,53 +760,53 @@ def page_nfa_viz() -> None:
 
     nfa = _get_nfa()
     if nfa is None:
-        st.info("👋 No NFA loaded yet. Go to **🔧 NFA Builder** first.", icon="💡")
+        st.info("👋 No NFA loaded yet. Open **🔧 NFA Workspace** to define one.", icon="💡")
         return
 
-    col_info, col_graph = st.columns([1, 2])
-
-    with col_info:
-        st.markdown("#### Legend")
-        st.markdown(
-            """<div class="info-card" style="font-size:0.86rem;">
-              <div>🟢 <b>Green arrow</b> — start / initial state</div>
-              <div style="margin-top:6px;">⭕ <b>Double circle</b> — accepting state</div>
-              <div style="margin-top:6px;">⭕ <b>Single circle</b> — non-accepting state</div>
-              <div style="margin-top:6px;">🔵 <b>Blue edges</b> — regular transitions</div>
-              <div style="margin-top:6px;">ε &nbsp;<b>ε labels</b> — epsilon transitions</div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("#### NFA Details")
-        st.markdown(
-            f"""<div class="info-card" style="font-size:0.85rem; line-height:2.0;">
-              <b>Q</b> = {{ {", ".join(sorted(nfa.states))} }}<br>
-              <b>Σ</b> = {{ {", ".join(sorted(nfa.alphabet))} }}<br>
-              <b>q₀</b> = {nfa.initial_state}<br>
-              <b>F</b> = {{ {", ".join(sorted(nfa.final_states)) or "∅"} }}<br>
-              <b>ε-trans?</b> {"Yes" if nfa.has_epsilon_transitions() else "No"}
-            </div>""",
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("#### ε-Closure Table")
-        from automata.conversion import epsilon_closure as eps_close
-        for state in sorted(nfa.states):
-            cl = eps_close({state}, nfa.transitions)
-            cl_str = "{" + ", ".join(sorted(cl)) + "}"
+    with st.expander("Legend and NFA details", expanded=False):
+        col_legend, col_details = st.columns([1, 1])
+        with col_legend:
+            st.markdown("#### Legend")
             st.markdown(
-                f"""<div style="font-size:0.82rem; margin-bottom:4px;">
-                  <span class="mono" style="color:#38bdf8;">ε-closure({{{state}}})</span>
-                  = <span class="mono" style="color:#4ade80;">{cl_str}</span>
+                """<div class="info-card" style="font-size:0.86rem;">
+                  <div><b style="color:#e34b4b;">Red border</b> — initial state</div>
+                  <div style="margin-top:6px;"><b style="color:#87bd98;">Green fill</b> — accepting state</div>
+                  <div style="margin-top:6px;"><b style="color:#a7b0b5;">Slate arrow</b> — symbol transition</div>
+                  <div style="margin-top:6px;"><b style="color:#e0b15a;">Amber arrow</b> — epsilon transition</div>
                 </div>""",
                 unsafe_allow_html=True,
             )
 
-    with col_graph:
-        st.markdown("#### Automaton Diagram")
-        dot = render_nfa(nfa)
-        _show_graph(dot, "NFA — arrows show all possible transitions including ε")
+        with col_details:
+            st.markdown("#### NFA Details")
+            st.markdown(
+                f"""<div class="info-card" style="font-size:0.85rem; line-height:2.0;">
+                  <b>Q</b> = {{ {", ".join(sorted(nfa.states))} }}<br>
+                  <b>Σ</b> = {{ {", ".join(sorted(nfa.alphabet))} }}<br>
+                  <b>q₀</b> = {nfa.initial_state}<br>
+                  <b>F</b> = {{ {", ".join(sorted(nfa.final_states)) or "∅"} }}<br>
+                  <b>ε-trans?</b> {"Yes" if nfa.has_epsilon_transitions() else "No"}
+                </div>""",
+                unsafe_allow_html=True,
+            )
+
+            st.markdown("#### ε-Closure Table")
+            from automata.conversion import epsilon_closure as eps_close
+            for state in sorted(nfa.states):
+                cl = eps_close({state}, nfa.transitions)
+                cl_str = "{" + ", ".join(sorted(cl)) + "}"
+                st.markdown(
+                    f"""<div style="font-size:0.82rem; margin-bottom:4px;">
+                      <span class="mono" style="color:#38bdf8;">ε-closure({{{state}}})</span>
+                      = <span class="mono" style="color:#4ade80;">{cl_str}</span>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+
+    st.markdown("#### Interactive Diagram")
+    options = _graph_controls("nfa_graph")
+    graph_html = render_nfa_interactive(nfa, **options)
+    _show_graph(graph_html, "NFA transitions include every possible path and epsilon move.")
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -763,7 +824,7 @@ def page_conversion() -> None:
 
     nfa = _get_nfa()
     if nfa is None:
-        st.info("👋 No NFA loaded yet. Go to **🔧 NFA Builder** first.", icon="💡")
+        st.info("👋 No NFA loaded yet. Open **🔧 NFA Workspace** to define one.", icon="💡")
         return
 
     result = _get_conversion()
@@ -905,7 +966,7 @@ def page_dfa_table() -> None:
 
     nfa = _get_nfa()
     if nfa is None:
-        st.info("👋 No NFA loaded yet. Go to **🔧 NFA Builder** first.", icon="💡")
+        st.info("👋 No NFA loaded yet. Open **🔧 NFA Workspace** to define one.", icon="💡")
         return
 
     result = _get_conversion()
@@ -975,15 +1036,13 @@ def page_dfa_viz() -> None:
 
     nfa = _get_nfa()
     if nfa is None:
-        st.info("👋 No NFA loaded yet. Go to **🔧 NFA Builder** first.", icon="💡")
+        st.info("👋 No NFA loaded yet. Open **🔧 NFA Workspace** to define one.", icon="💡")
         return
 
     result = _get_conversion()
     dfa = result.dfa
 
-    col_info, col_graph = st.columns([1, 2])
-
-    with col_info:
+    with st.expander("DFA summary and states", expanded=False):
         st.markdown("#### DFA Summary")
         st.markdown(
             f"""<div class="info-card" style="font-size:0.85rem; line-height:2.0;">
@@ -1002,7 +1061,7 @@ def page_dfa_viz() -> None:
             is_final = state in dfa.final_states
             icon = "★ " if is_final else "  "
             arrow = "→ " if is_init else "  "
-            color = "#4ade80" if is_final else "#38bdf8" if is_init else "#94a3b8"
+            color = "#87bd98" if is_final else "#e34b4b" if is_init else "#aeb7bc"
             st.markdown(
                 f'<div style="font-size:0.83rem; margin-bottom:3px; color:{color};">'
                 f'{arrow}{icon}<span class="mono">{label}</span></div>',
@@ -1010,14 +1069,13 @@ def page_dfa_viz() -> None:
             )
         st.caption("→ initial  |  ★ accepting")
 
-    with col_graph:
-        st.markdown("#### Automaton Diagram")
-        dot = render_dfa(dfa)
-        _show_graph(
-            dot,
-            "DFA — each node shows the NFA subset it represents; "
-            "red node = dead/trap state (∅)",
-        )
+    st.markdown("#### Interactive Diagram")
+    options = _graph_controls("dfa_graph")
+    graph_html = render_dfa_interactive(dfa, **options)
+    _show_graph(
+        graph_html,
+        "DFA nodes show their NFA subsets; ∅ is the dead/trap state.",
+    )
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1035,7 +1093,7 @@ def page_string_testing() -> None:
 
     nfa = _get_nfa()
     if nfa is None:
-        st.info("👋 No NFA loaded yet. Go to **🔧 NFA Builder** first.", icon="💡")
+        st.info("👋 No NFA loaded yet. Open **🔧 NFA Workspace** to define one.", icon="💡")
         return
 
     result = _get_conversion()
@@ -1067,7 +1125,6 @@ def page_string_testing() -> None:
         _run_single_test(nfa, dfa, input_str)
 
     if run_batch:
-        # Determine which example is loaded
         _run_batch_test(nfa, dfa)
 
 
@@ -1199,19 +1256,29 @@ def _run_batch_test(nfa: NFA, dfa) -> None:
 # Router
 # ────────────────────────────────────────────────────────────────────────────
 
-page = st.session_state.get("page", "🏠 Home")
+def page_nfa_workspace() -> None:
+    build_tab, graph_tab = st.tabs(["Build & Transitions", "Graph & Details"])
+    with build_tab:
+        page_nfa_builder()
+    with graph_tab:
+        page_nfa_viz()
 
-if page == "🏠 Home":
-    page_home()
-elif page == "🔧 NFA Builder":
-    page_nfa_builder()
-elif page == "📊 NFA Visualization":
-    page_nfa_viz()
+
+def page_dfa_workspace() -> None:
+    table_tab, graph_tab = st.tabs(["Transition Table", "Graph & States"])
+    with table_tab:
+        page_dfa_table()
+    with graph_tab:
+        page_dfa_viz()
+
+
+page = st.session_state.get("page", "🔧 NFA Workspace")
+
+if page == "🔧 NFA Workspace":
+    page_nfa_workspace()
 elif page == "🔄 Conversion Process":
     page_conversion()
-elif page == "📋 DFA Transition Table":
-    page_dfa_table()
-elif page == "📊 DFA Visualization":
-    page_dfa_viz()
+elif page == "📐 DFA Workspace":
+    page_dfa_workspace()
 elif page == "🧪 String Testing":
     page_string_testing()
